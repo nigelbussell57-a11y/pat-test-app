@@ -777,11 +777,19 @@ function renderEngineerList(){
    ========================================================================= */
 let registerFilter = '';
 let expandedAsset = null;
+let showArchived = false;
 function renderRegister(){
   const q = registerFilter.toLowerCase();
-  const rows = DB.assetRegister.filter(a=>!q || [a.assetNo,a.description,a.location,a.site].some(v=>String(v||'').toLowerCase().includes(q)));
+  const rows = DB.assetRegister
+    .filter(a=> showArchived || a.status!=='Archived')
+    .filter(a=>!q || [a.assetNo,a.description,a.location,a.site].some(v=>String(v||'').toLowerCase().includes(q)));
+  const archivedCount = DB.assetRegister.filter(a=>a.status==='Archived').length;
   return `
   <div class="toolbar"><input id="reg-search" placeholder="Search asset no., description, location, site…" value="${esc(registerFilter)}"></div>
+  ${archivedCount? `<div class="field" style="display:flex;align-items:center;gap:8px;margin:-6px 0 12px;">
+    <input type="checkbox" id="reg-show-archived" ${showArchived?'checked':''} style="width:auto;">
+    <label for="reg-show-archived" style="margin:0;text-transform:none;font-size:13px;font-weight:500;color:var(--ink-soft);">Show archived (${archivedCount})</label>
+  </div>` : ''}
   <div class="panel">
     <div class="section-title"><h2>Asset register</h2><span class="small-note">${rows.length} of ${DB.assetRegister.length}</span></div>
     ${rows.length? `<table><thead><tr><th>Asset</th><th>Location</th><th>Last test</th><th>Status</th></tr></thead>
@@ -792,13 +800,14 @@ function renderRegister(){
 function renderRegisterRow(a){
   const overdue = a.retestDate && daysUntil(a.retestDate)<0;
   const dueSoon = a.retestDate && daysUntil(a.retestDate)>=0 && daysUntil(a.retestDate)<30;
+  const archived = a.status==='Archived';
   const expanded = String(expandedAsset)===String(a.assetNo);
-  return `<tr class="clickable" data-asset="${esc(a.assetNo)}">
+  return `<tr class="clickable" data-asset="${esc(a.assetNo)}" style="${archived?'opacity:.55;':''}">
     <td class="asset-no">${esc(a.assetNo)}${a.applianceType==='Microwave'?' <span class="badge badge-muted">MW</span>':''}${a.passFail? `<div>${a.passFail==='Pass'?'<span class="badge badge-pass">Pass</span>':'<span class="badge badge-fail">Fail</span>'}</div>`:''}
       <div class="meta" style="font-size:11px;color:var(--ink-soft);font-family:'Inter';font-weight:500;">${esc(a.description||'No description')}</div></td>
     <td>${esc(a.location||'—')}<div class="meta" style="font-size:11px;color:var(--ink-soft);">${esc(a.site||'')}</div></td>
     <td>${fmtDate(a.testDate)}<div class="meta" style="font-size:11px;color:var(--ink-soft);">retest ${fmtDate(a.retestDate)}</div></td>
-    <td>${overdue?'<span class="badge badge-fail">overdue</span>':dueSoon?'<span class="badge badge-warn">due soon</span>':'<span class="badge badge-pass">ok</span>'}</td>
+    <td>${archived?'<span class="badge badge-muted">archived</span>':overdue?'<span class="badge badge-fail">overdue</span>':dueSoon?'<span class="badge badge-warn">due soon</span>':'<span class="badge badge-pass">ok</span>'}</td>
   </tr>
   ${expanded? `<tr><td colspan="4"><div class="detail-card">
     <div class="detail-grid">
@@ -818,6 +827,10 @@ function renderRegisterRow(a){
     </div>
     <div class="small-note">Test history for this asset:</div>
     ${renderMiniHistory(a.assetNo)}
+    <div class="btn-row" style="margin-top:12px;">
+      <button class="btn btn-ghost" data-archive-toggle="${esc(a.assetNo)}" style="font-size:12.5px;padding:9px 10px;">${archived?'Reactivate asset':'Archive — replaced/removed'}</button>
+      <button class="btn btn-danger" data-delete-asset="${esc(a.assetNo)}" style="font-size:12.5px;padding:9px 10px;">Delete permanently</button>
+    </div>
   </div></td></tr>` : ''}`;
 }
 function renderMiniHistory(assetNo){
@@ -1137,9 +1150,31 @@ function bindHandlers(){
   // -- Register --
   const regSearch = document.getElementById('reg-search');
   if(regSearch) regSearch.oninput = (e)=>{ registerFilter = e.target.value; renderAll(); setTimeout(()=>{ const el=document.getElementById('reg-search'); if(el){el.focus(); el.setSelectionRange(el.value.length,el.value.length);} },0); };
+  const showArchivedBox = document.getElementById('reg-show-archived');
+  if(showArchivedBox) showArchivedBox.onchange = (e)=>{ showArchived = e.target.checked; renderAll(); };
   document.querySelectorAll('tr[data-asset]').forEach(tr=>tr.onclick=()=>{
     const an = tr.dataset.asset;
     expandedAsset = expandedAsset===an? null : an;
+    renderAll();
+  });
+  document.querySelectorAll('[data-archive-toggle]').forEach(btn=>btn.onclick=async (e)=>{
+    e.stopPropagation();
+    const an = btn.dataset.archiveToggle;
+    const a = DB.assetRegister.find(x=>String(x.assetNo)===String(an));
+    if(!a) return;
+    a.status = (a.status==='Archived') ? 'Active' : 'Archived';
+    await save('assetRegister');
+    toast(a.status==='Archived' ? 'Asset archived' : 'Asset reactivated');
+    renderAll();
+  });
+  document.querySelectorAll('[data-delete-asset]').forEach(btn=>btn.onclick=async (e)=>{
+    e.stopPropagation();
+    const an = btn.dataset.deleteAsset;
+    if(!confirm(`Permanently delete asset ${an} from the register? Its test history will be kept for your records, but it will no longer appear in the register at all — if it's just been replaced, "Archive" is usually the better option. Continue?`)) return;
+    DB.assetRegister = DB.assetRegister.filter(x=>String(x.assetNo)!==String(an));
+    await save('assetRegister');
+    expandedAsset = null;
+    toast('Asset deleted from register');
     renderAll();
   });
 
