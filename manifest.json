@@ -1,0 +1,17 @@
+{
+  "name": "Asset Test Rig — Offline Edition",
+  "short_name": "PAT Offline",
+  "description": "Offline PAT testing app with QR/barcode asset scanning and local storage — no internet required after first install.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ECEFEA",
+  "theme_color": "#16233A",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
