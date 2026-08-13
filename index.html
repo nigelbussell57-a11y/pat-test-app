@@ -6,6 +6,10 @@
 <title>Asset Test Rig — Offline Edition</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#16233A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="PAT Offline">
+<link rel="apple-touch-icon" href="icon-192.png">
 <script src="./html5-qrcode.min.js"></script>
 <script src="./xlsx.full.min.js"></script>
 <style>
@@ -280,6 +284,7 @@ async function save(table){
 async function saveMany(tables){
   for(const t of tables){ await save(t); }
 }
+
 /* =========================================================================
    STATE
    ========================================================================= */
@@ -323,6 +328,7 @@ function fmtDate(d){
   }catch(e){ return d; }
 }
 function esc(s){ return (s===undefined||s===null)?'':String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function classLabel(c){ return c==='V' ? 'Visual only' : c==='II' ? 'Class II' : 'Class I'; }
 function genId(prefix){
   const n = DB.settings.nextTestSeq || 1;
   DB.settings.nextTestSeq = n+1;
@@ -430,7 +436,7 @@ function renderJobStep(){
       <label>Engineer</label>
       ${activeEng.length? `<select id="f-eng">
         <option value="">Select engineer…</option>
-        ${activeEng.map(e=>`<option value="${esc(e.id)}" ${currentJob?.engineerId===e.id?'selected':''}>${esc(e.name)}</option>`).join('')}
+        ${activeEng.map(e=>`<option value="${esc(e.id)}" ${(currentJob&&currentJob.engineerId===e.id)?'selected':''}>${esc(e.name)}</option>`).join('')}
       </select>` : `<div class="hint" style="margin:0;color:var(--red)">No active engineers registered yet. Add one under "Equipment &amp; Engineers".</div>`}
     </div>
     <button class="btn btn-primary" id="btn-start-job">Log job &amp; continue to scan</button>
@@ -462,8 +468,9 @@ function renderScanStep(){
 
 function renderReadingsStep(){
   const a = currentAsset;
-  const r = currentReadings || {visual:'', earthBond:'', insulation:'', load:'', leakage:'', polarity:'', microwaveLeakage:'', notes:''};
+  const r = currentReadings || {visual:'', earthBond:'', insulation:'', testVoltage:'', load:'', leakage:'', polarity:'', microwaveLeakage:'', notes:''};
   const isMicrowave = a.applianceType==='Microwave';
+  const visualOnly = a.class==='V';
   return `
   <div class="tag-card">
     <div class="eyebrow">Asset under test</div>
@@ -478,10 +485,11 @@ function renderReadingsStep(){
     </div>
     <div class="row2">
       <div class="field">
-        <label>Appliance class</label>
+        <label>Test Type</label>
         <select id="f-class">
           <option value="I" ${a.class==='I'?'selected':''}>Class I (earthed)</option>
           <option value="II" ${a.class==='II'?'selected':''}>Class II (double insulated)</option>
+          <option value="V" ${visualOnly?'selected':''}>Visual inspection only</option>
         </select>
       </div>
       <div class="field">
@@ -493,6 +501,7 @@ function renderReadingsStep(){
       </div>
     </div>
     ${isMicrowave? `<div class="hint" style="margin:0;">Microwave ovens get an extra RF leakage check below, alongside the usual electrical tests.</div>`:''}
+    ${visualOnly? `<div class="hint" style="margin:0;">Visual inspection only — electrical readings and polarity are skipped for this test.</div>`:''}
   </div>
   <div class="panel">
     <h2>Visual &amp; polarity</h2>
@@ -504,7 +513,7 @@ function renderReadingsStep(){
           <option value="Fail" ${r.visual==='Fail'?'selected':''}>Fail</option>
         </select>
       </div>
-      <div class="field"><label>Polarity</label>
+      <div class="field" id="polarity-field" style="${visualOnly?'display:none;':''}"><label>Polarity</label>
         <select id="f-polarity">
           <option value="" ${r.polarity===''?'selected':''}>—</option>
           <option value="Pass" ${r.polarity==='Pass'?'selected':''}>Pass</option>
@@ -513,19 +522,32 @@ function renderReadingsStep(){
       </div>
     </div>
   </div>
-  <div class="panel">
+  <div class="panel" id="electrical-panel" style="${visualOnly?'display:none;':''}">
     <h2>Electrical readings</h2>
     <div class="row2">
       <div class="field"><label>Earth bond (Ω)</label><input type="number" step="0.01" id="f-earth" value="${a.class==='II'?'':esc(r.earthBond)}" ${a.class==='II'?'disabled placeholder="N/A — Class II has no earth"':''}></div>
       <div class="field"><label>Insulation (MΩ)</label><input type="number" step="0.01" id="f-insul" value="${esc(r.insulation)}"></div>
     </div>
     <div class="row2">
+      <div class="field">
+        <label>Test voltage</label>
+        <select id="f-test-voltage">
+          <option value="" ${r.testVoltage===''?'selected':''}>—</option>
+          <option value="250VDC" ${r.testVoltage==='250VDC'?'selected':''}>250V DC</option>
+          <option value="500VDC" ${r.testVoltage==='500VDC'?'selected':''}>500V DC</option>
+        </select>
+      </div>
       <div class="field"><label>Load (A)</label><input type="number" step="0.01" id="f-load" value="${esc(r.load)}"></div>
-      <div class="field"><label>Leakage (mA)</label><input type="number" step="0.01" id="f-leak" value="${esc(r.leakage)}"></div>
     </div>
-    <div class="field"><label>Notes</label><textarea id="f-notes" rows="2" placeholder="Optional">${esc(r.notes)}</textarea></div>
+    <div class="row2">
+      <div class="field"><label>Leakage (mA)</label><input type="number" step="0.01" id="f-leak" value="${esc(r.leakage)}"></div>
+      <div class="field"></div>
+    </div>
   </div>
-  ${isMicrowave? `
+  <div class="panel">
+    <div class="field" style="margin-bottom:0;"><label>Notes</label><textarea id="f-notes" rows="2" placeholder="Optional">${esc(r.notes)}</textarea></div>
+  </div>
+  ${isMicrowave && !visualOnly? `
   <div class="panel" style="border-color:var(--yellow-deep);">
     <h2>Microwave leakage test</h2>
     <p class="hint">Measure RF leakage at the door seal and viewing screen with a microwave leakage detector, oven running with a load (e.g. a cup of water) inside.</p>
@@ -545,7 +567,7 @@ function renderCheckStep(){
   <div class="tag-card">
     <div class="eyebrow">Checking</div>
     <div class="big">${esc(a.assetNo)}</div>
-    <div class="sub">${esc(a.description||'Description not recorded')}${a.location? ' · '+esc(a.location):''}${a.applianceType==='Microwave'?' · Microwave':''}</div>
+    <div class="sub">${esc(a.description||'Description not recorded')}${a.location? ' · '+esc(a.location):''} · ${esc(classLabel(a.class))}${a.applianceType==='Microwave'?' · Microwave':''}</div>
   </div>
   <div class="panel">
     <h2>Front-end check</h2>
@@ -565,15 +587,20 @@ function renderCheckStep(){
 
 function frontEndCheck(){
   const r = currentReadings;
+  const visualOnly = currentAsset.class==='V';
   const items = [
     {label:'Visual inspection recorded', ok: r.visual==='Pass'||r.visual==='Fail'},
-    {label:'Polarity recorded', ok: r.polarity==='Pass'||r.polarity==='Fail'},
   ];
+  if(visualOnly){
+    return {items, allOk: items.every(i=>i.ok)};
+  }
+  items.push({label:'Polarity recorded', ok: r.polarity==='Pass'||r.polarity==='Fail'});
   if(currentAsset.class!=='II'){
     items.push({label:'Earth bond reading entered', ok: r.earthBond!==''&&!isNaN(r.earthBond)});
   }
   items.push(
     {label:'Insulation reading entered', ok: r.insulation!==''&&!isNaN(r.insulation)},
+    {label:'Test voltage selected', ok: r.testVoltage==='250VDC'||r.testVoltage==='500VDC'},
     {label:'Load reading entered', ok: r.load!==''&&!isNaN(r.load)},
     {label:'Leakage reading entered', ok: r.leakage!==''&&!isNaN(r.leakage)},
     {label:'No negative readings', ok: [r.earthBond,r.insulation,r.load,r.leakage].every(v=>v===''||parseFloat(v)>=0)},
@@ -647,7 +674,7 @@ function loadAssetIntoWizard(assetNo){
   }else{
     currentAsset = { assetNo, description:'', location:'', site: currentJob.site, class:'I', applianceType:'General', isNew:true, _originalAssetNo: assetNo };
   }
-  currentReadings = {visual:'', earthBond:'', insulation:'', load:'', leakage:'', polarity:'', microwaveLeakage:'', notes:''};
+  currentReadings = {visual:'', earthBond:'', insulation:'', testVoltage:'', load:'', leakage:'', polarity:'', microwaveLeakage:'', notes:''};
   wizardStep = 'readings';
   renderAll();
 }
@@ -658,6 +685,9 @@ function loadAssetIntoWizard(assetNo){
 function calculateResult(){
   const r = currentReadings, s = DB.settings, fails = [];
   if(r.visual!=='Pass') fails.push('Visual inspection: Fail');
+  if(currentAsset.class==='V'){
+    return { pass: fails.length===0, fails };
+  }
   if(r.polarity!=='Pass') fails.push('Polarity: Fail');
   const eb = parseFloat(r.earthBond);
   if(currentAsset.class!=='II' && !isNaN(eb) && eb > s.earthBondMax) fails.push(`Earth bond ${eb}Ω exceeds limit of ${s.earthBondMax}Ω`);
@@ -771,15 +801,16 @@ function renderRegisterRow(a){
   ${expanded? `<tr><td colspan="4"><div class="detail-card">
     <div class="detail-grid">
       <div><b>Description</b>${esc(a.description||'—')}</div>
-      <div><b>Class</b>${esc(a.class||'I')}</div>
+      <div><b>Class</b>${esc(classLabel(a.class))}</div>
       <div><b>Appliance type</b>${esc(a.applianceType||'General')}</div>
+      ${a.class!=='V'? `
       <div><b>Earth bond</b>${esc(a.earthBond||'—')} Ω</div>
-      <div><b>Insulation</b>${esc(a.insulation||'—')} MΩ</div>
+      <div><b>Insulation</b>${esc(a.insulation||'—')} MΩ${a.testVoltage? ' @ '+esc(a.testVoltage):''}</div>
       <div><b>Load</b>${esc(a.load||'—')} A</div>
       <div><b>Leakage</b>${esc(a.leakage||'—')} mA</div>
-      ${a.applianceType==='Microwave'? `<div><b>Microwave leakage</b>${esc(a.microwaveLeakage||'—')} mW/cm²</div>`:''}
+      <div><b>Polarity</b>${esc(a.polarity||'—')}</div>` : ''}
+      ${a.applianceType==='Microwave' && a.class!=='V'? `<div><b>Microwave leakage</b>${esc(a.microwaveLeakage||'—')} mW/cm²</div>`:''}
       <div><b>Visual</b>${esc(a.visual||'—')}</div>
-      <div><b>Polarity</b>${esc(a.polarity||'—')}</div>
       <div><b>Tester</b>${esc(a.tester||'—')}</div>
       <div><b>Engineer</b>${esc(a.engineer||'—')}</div>
     </div>
@@ -841,9 +872,9 @@ function renderIO(){
 function exportWorkbook(){
   const wb = XLSX.utils.book_new();
   const ar = DB.assetRegister.map(a=>({
-    'Asset No.':a.assetNo,'Appliance Description':a.description,'Location':a.location,'Site':a.site,
+    'Asset No.':a.assetNo,'Appliance Description':a.description,'Location':a.location,'Site':a.site,'Class':a.class||'I',
     'Test Date':a.testDate,'Re-Test Date':a.retestDate,'Visual (Pass/Fail)':a.visual,'Earth Bond (Ω)':a.earthBond,
-    'Insulation (MΩ)':a.insulation,'Load (A)':a.load,'Leakage (mA)':a.leakage,'Polarity (Pass/Fail)':a.polarity,
+    'Insulation (MΩ)':a.insulation,'Insulation Test Voltage':a.testVoltage,'Load (A)':a.load,'Leakage (mA)':a.leakage,'Polarity (Pass/Fail)':a.polarity,
     'Appliance Type':a.applianceType,'Microwave Leakage (mW/cm²)':a.microwaveLeakage,
     'Pass/Fail':a.passFail,'Tester':a.tester,'Tester Serial No.':a.testerSerial,'Calibration Date':a.calDate,
     'Engineer':a.engineer,'Notes':a.notes,'Status':a.status||'Active'
@@ -852,9 +883,9 @@ function exportWorkbook(){
   const en = DB.engineers.map(e=>({'Engineer ID':e.id,'Engineer Name':e.name,'Active':e.active,'Notes':e.notes}));
   const jl = DB.jobLog.map(j=>({'Site':j.site,'Equipment Make / Model':j.equipmentLabel,'Serial No.':j.serial,'Date':j.date,'Engineer':j.engineerName,'Calibration Date':j.calDate}));
   const th = DB.testHistory.map(h=>({
-    'Test ID':h.testId,'Asset No.':h.assetNo,'Appliance Description':h.description,'Location':h.location,'Site':h.site,
+    'Test ID':h.testId,'Asset No.':h.assetNo,'Appliance Description':h.description,'Location':h.location,'Site':h.site,'Class':h.class||'I',
     'Test Date':h.testDate,'Re-Test Date':h.retestDate,'Visual (Pass/Fail)':h.visual,'Earth Bond (Ω)':h.earthBond,
-    'Insulation (MΩ)':h.insulation,'Load (A)':h.load,'Leakage (mA)':h.leakage,'Polarity (Pass/Fail)':h.polarity,
+    'Insulation (MΩ)':h.insulation,'Insulation Test Voltage':h.testVoltage,'Load (A)':h.load,'Leakage (mA)':h.leakage,'Polarity (Pass/Fail)':h.polarity,
     'Appliance Type':h.applianceType,'Microwave Leakage (mW/cm²)':h.microwaveLeakage,
     'Pass/Fail':h.passFail,'Tester':h.tester,'Tester Serial No.':h.testerSerial,'Calibration Date':h.calDate,
     'Engineer':h.engineer,'Notes':h.notes
@@ -887,19 +918,19 @@ function importFile(mode){
       const arRows = sheetToRows(wb,'Asset Register').map(r=>({
         assetNo:String(r['Asset No.']||''), description:r['Appliance Description']||'', location:r['Location']||'', site:r['Site']||'',
         testDate:excelDateToISO(r['Test Date']), retestDate:excelDateToISO(r['Re-Test Date']), visual:r['Visual (Pass/Fail)']||'',
-        earthBond:r['Earth Bond (Ω)']||'', insulation:r['Insulation (MΩ)']||'', load:r['Load (A)']||'', leakage:r['Leakage (mA)']||'',
+        earthBond:r['Earth Bond (Ω)']||'', insulation:r['Insulation (MΩ)']||'', testVoltage:r['Insulation Test Voltage']||'', load:r['Load (A)']||'', leakage:r['Leakage (mA)']||'',
         polarity:r['Polarity (Pass/Fail)']||'', passFail:r['Pass/Fail']||'', tester:r['Tester']||'', testerSerial:r['Tester Serial No.']||'',
         calDate:excelDateToISO(r['Calibration Date']), engineer:r['Engineer']||'', notes:r['Notes']||'', status:r['Status']||'Active',
-        class:'I', applianceType:r['Appliance Type']||'General', microwaveLeakage:r['Microwave Leakage (mW/cm²)']||''
+        class:r['Class']||'I', applianceType:r['Appliance Type']||'General', microwaveLeakage:r['Microwave Leakage (mW/cm²)']||''
       })).filter(r=>r.assetNo);
       const teRows = sheetToRows(wb,'Test Equipment').map(r=>({id:String(r['Equipment ID']||''), makeModel:r['Make / Model']||'', serial:r['Serial No.']||'', calDate:excelDateToISO(r['Calibration Date']), active:r['Active']||'Yes', notes:r['Notes']||''})).filter(r=>r.id);
       const enRows = sheetToRows(wb,'Engineers').map(r=>({id:String(r['Engineer ID']||''), name:r['Engineer Name']||'', active:r['Active']||'Yes', notes:r['Notes']||''})).filter(r=>r.id);
       const thRows = sheetToRows(wb,'Test History').map(r=>({
         testId:String(r['Test ID']||''), assetNo:String(r['Asset No.']||''), description:r['Appliance Description']||'', location:r['Location']||'', site:r['Site']||'',
         testDate:excelDateToISO(r['Test Date']), retestDate:excelDateToISO(r['Re-Test Date']), visual:r['Visual (Pass/Fail)']||'',
-        earthBond:r['Earth Bond (Ω)']||'', insulation:r['Insulation (MΩ)']||'', load:r['Load (A)']||'', leakage:r['Leakage (mA)']||'',
+        earthBond:r['Earth Bond (Ω)']||'', insulation:r['Insulation (MΩ)']||'', testVoltage:r['Insulation Test Voltage']||'', load:r['Load (A)']||'', leakage:r['Leakage (mA)']||'',
         polarity:r['Polarity (Pass/Fail)']||'', passFail:r['Pass/Fail']||'', tester:r['Tester']||'', testerSerial:r['Tester Serial No.']||'',
-        calDate:excelDateToISO(r['Calibration Date']), engineer:r['Engineer']||'', notes:r['Notes']||'',
+        calDate:excelDateToISO(r['Calibration Date']), engineer:r['Engineer']||'', notes:r['Notes']||'', class:r['Class']||'I',
         applianceType:r['Appliance Type']||'General', microwaveLeakage:r['Microwave Leakage (mW/cm²)']||''
       })).filter(r=>r.testId);
 
@@ -982,8 +1013,10 @@ function bindHandlers(){
   const startJobBtn = document.getElementById('btn-start-job');
   if(startJobBtn) startJobBtn.onclick = async ()=>{
     const site = document.getElementById('f-site').value.trim();
-    const equipId = document.getElementById('f-equip')?.value;
-    const engId = document.getElementById('f-eng')?.value;
+    const equipEl = document.getElementById('f-equip');
+    const engEl = document.getElementById('f-eng');
+    const equipId = equipEl ? equipEl.value : undefined;
+    const engId = engEl ? engEl.value : undefined;
     if(!site){ toast('Enter a site'); return; }
     if(!equipId){ toast('Select a test instrument'); return; }
     if(!engId){ toast('Select an engineer'); return; }
@@ -1015,8 +1048,11 @@ function bindHandlers(){
   const classSelect = document.getElementById('f-class');
   if(classSelect) classSelect.onchange = ()=>{
     const earthInput = document.getElementById('f-earth');
+    const polarityField = document.getElementById('polarity-field');
+    const electricalPanel = document.getElementById('electrical-panel');
     if(!earthInput) return;
-    if(classSelect.value==='II'){
+    const val = classSelect.value;
+    if(val==='II'){
       earthInput.disabled = true;
       earthInput.value = '';
       earthInput.placeholder = 'N/A — Class II has no earth';
@@ -1024,6 +1060,8 @@ function bindHandlers(){
       earthInput.disabled = false;
       earthInput.placeholder = '';
     }
+    if(polarityField) polarityField.style.display = (val==='V') ? 'none' : '';
+    if(electricalPanel) electricalPanel.style.display = (val==='V') ? 'none' : '';
   };
   const readingsNext = document.getElementById('btn-readings-next');
   if(readingsNext) readingsNext.onclick = ()=>{
@@ -1031,14 +1069,16 @@ function bindHandlers(){
     currentAsset.location = document.getElementById('f-loc').value.trim();
     currentAsset.class = document.getElementById('f-class').value;
     currentAsset.applianceType = document.getElementById('f-appliance-type').value;
+    const visualOnly = currentAsset.class==='V';
     currentReadings = {
       visual: document.getElementById('f-visual').value,
-      polarity: document.getElementById('f-polarity').value,
-      earthBond: document.getElementById('f-earth').value,
-      insulation: document.getElementById('f-insul').value,
-      load: document.getElementById('f-load').value,
-      leakage: document.getElementById('f-leak').value,
-      microwaveLeakage: currentAsset.applianceType==='Microwave' ? (document.getElementById('f-mwleak')?.value ?? '') : '',
+      polarity: visualOnly ? '' : document.getElementById('f-polarity').value,
+      earthBond: visualOnly ? '' : document.getElementById('f-earth').value,
+      insulation: visualOnly ? '' : document.getElementById('f-insul').value,
+      testVoltage: visualOnly ? '' : document.getElementById('f-test-voltage').value,
+      load: visualOnly ? '' : document.getElementById('f-load').value,
+      leakage: visualOnly ? '' : document.getElementById('f-leak').value,
+      microwaveLeakage: (currentAsset.applianceType==='Microwave' && !visualOnly) ? (function(){ var el = document.getElementById('f-mwleak'); return (el && el.value) ? el.value : ''; })() : '',
       notes: document.getElementById('f-notes').value.trim(),
     };
     wizardStep = 'check';
@@ -1142,7 +1182,7 @@ async function commitResult(){
   const record = {
     testId, assetNo: currentAsset.assetNo, description: currentAsset.description, location: currentAsset.location, site: currentJob.site,
     testDate: todayISO(), retestDate, visual: currentReadings.visual, earthBond: currentReadings.earthBond, insulation: currentReadings.insulation,
-    load: currentReadings.load, leakage: currentReadings.leakage, polarity: currentReadings.polarity, passFail: currentResult.pass?'Pass':'Fail',
+    testVoltage: currentReadings.testVoltage, load: currentReadings.load, leakage: currentReadings.leakage, polarity: currentReadings.polarity, passFail: currentResult.pass?'Pass':'Fail',
     tester: currentJob.equipmentLabel, testerSerial: currentJob.serial, calDate: currentJob.calDate, engineer: currentJob.engineerName, notes: currentReadings.notes,
     applianceType: currentAsset.applianceType, microwaveLeakage: currentReadings.microwaveLeakage
   };
