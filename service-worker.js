@@ -1,6 +1,6 @@
 // Bump this when you ship an update to index.html so the new version gets
 // fetched instead of the old cached one.
-const CACHE_NAME = 'pat-offline-v1';
+const CACHE_NAME = 'pat-offline-v2';
 
 const APP_SHELL = [
   './',
