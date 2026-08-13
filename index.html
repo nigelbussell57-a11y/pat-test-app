@@ -540,7 +540,7 @@ function renderReadingsStep(){
       <div class="field"><label>Load (A)</label><input type="number" step="0.01" id="f-load" value="${esc(r.load)}"></div>
     </div>
     <div class="row2">
-      <div class="field"><label>Leakage (mA)</label><input type="number" step="0.01" id="f-leak" value="${esc(r.leakage)}"></div>
+      <div class="field"><label id="leak-label">Leakage (mA)${a.class!=='II'?' <span style="text-transform:none;font-weight:500;color:var(--ink-soft);">— optional for Class I</span>':''}</label><input type="number" step="0.01" id="f-leak" value="${esc(r.leakage)}"></div>
       <div class="field"></div>
     </div>
   </div>
@@ -602,9 +602,11 @@ function frontEndCheck(){
     {label:'Insulation reading entered', ok: r.insulation!==''&&!isNaN(r.insulation)},
     {label:'Test voltage selected', ok: r.testVoltage==='250VDC'||r.testVoltage==='500VDC'},
     {label:'Load reading entered', ok: r.load!==''&&!isNaN(r.load)},
-    {label:'Leakage reading entered', ok: r.leakage!==''&&!isNaN(r.leakage)},
-    {label:'No negative readings', ok: [r.earthBond,r.insulation,r.load,r.leakage].every(v=>v===''||parseFloat(v)>=0)},
   );
+  if(currentAsset.class==='II'){
+    items.push({label:'Leakage reading entered', ok: r.leakage!==''&&!isNaN(r.leakage)});
+  }
+  items.push({label:'No negative readings', ok: [r.earthBond,r.insulation,r.load,r.leakage].every(v=>v===''||parseFloat(v)>=0)});
   if(currentAsset.applianceType==='Microwave'){
     items.push({label:'Microwave leakage reading entered', ok: r.microwaveLeakage!==''&&!isNaN(r.microwaveLeakage)&&parseFloat(r.microwaveLeakage)>=0});
   }
@@ -693,9 +695,9 @@ function calculateResult(){
   if(currentAsset.class!=='II' && !isNaN(eb) && eb > s.earthBondMax) fails.push(`Earth bond ${eb}Ω exceeds limit of ${s.earthBondMax}Ω`);
   const ins = parseFloat(r.insulation);
   if(!isNaN(ins) && ins < s.insulationMin) fails.push(`Insulation ${ins}MΩ is below minimum of ${s.insulationMin}MΩ`);
-  const leakLimit = currentAsset.class==='II' ? s.leakageMaxClassII : s.leakageMaxClassI;
+  const leakLimit = s.leakageMaxClassII;
   const leak = parseFloat(r.leakage);
-  if(!isNaN(leak) && leak > leakLimit) fails.push(`Leakage ${leak}mA exceeds Class ${currentAsset.class} limit of ${leakLimit}mA`);
+  if(currentAsset.class==='II' && !isNaN(leak) && leak > leakLimit) fails.push(`Leakage ${leak}mA exceeds Class II limit of ${leakLimit}mA`);
   const load = parseFloat(r.load);
   if(!isNaN(load) && load===0) fails.push('No load current detected (possible open circuit)');
   if(currentAsset.applianceType==='Microwave'){
@@ -1062,6 +1064,8 @@ function bindHandlers(){
     }
     if(polarityField) polarityField.style.display = (val==='V') ? 'none' : '';
     if(electricalPanel) electricalPanel.style.display = (val==='V') ? 'none' : '';
+    const leakLabel = document.getElementById('leak-label');
+    if(leakLabel) leakLabel.innerHTML = 'Leakage (mA)' + (val!=='II' ? ' <span style="text-transform:none;font-weight:500;color:var(--ink-soft);">— optional for Class I</span>' : '');
   };
   const readingsNext = document.getElementById('btn-readings-next');
   if(readingsNext) readingsNext.onclick = ()=>{
